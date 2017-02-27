@@ -1,13 +1,18 @@
+import javax.xml.crypto.Data;
+import java.io.File;
 import java.io.IOException;
 import java.net.*;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 public class TFTPServer
 {
 	private static final int TFTPPORT = 4970;
 	private static final int BUFSIZE = 516;
-	private static final String READDIR = "/TFTP//read/"; //custom address at your PC
-	private static final String WRITEDIR = "/TFTP//write/"; //custom address at your PC
+	private static final String READDIR = "C:\\Users\\maxkr\\IdeaProjects\\Lab3\\TFTP\\read\\"; //custom address at your PC
+	private static final String WRITEDIR = "/TFTP/write/"; //custom address at your PC
+
 	// OP codes
 	private static final int OP_RRQ = 1;
 	private static final int OP_WRQ = 2;
@@ -67,11 +72,11 @@ public class TFTPServer
 
 						// Connect to client
 						sendSocket.connect(clientAddress);
-
+/*
 						System.out.printf("%s request for %s from %s using port %d\n",
 								(reqtype == OP_RRQ)?"Read":"Write",
 								clientAddress.getHostName(), clientAddress.getPort());
-
+*/
 						// Read request
 						if (reqtype == OP_RRQ)
 						{
@@ -112,10 +117,9 @@ public class TFTPServer
 		}
 		// Get client address and port from the packet
 
-		String ip = dp.getAddress().toString();
 		int port = dp.getPort();
 
-		return new InetSocketAddress(ip, port);
+		return new InetSocketAddress(dp.getAddress(), port);
 	}
 
 	/**
@@ -145,7 +149,7 @@ public class TFTPServer
 		requestedFile.append(fileName); //Store the filename in the StringBuffer
 
 		//parse transfer mode, we are supposed to do that but I am not sure what to use it for atm
-		
+
 		int offset = readBytes; //save the offset for mode
 		readBytes ++; //"step over" 0 that signified the end of the filename
 
@@ -155,7 +159,9 @@ public class TFTPServer
 
 		//readBytes - offset give length of the mode; saving the mode in lower case for convenience
 		String mode = new String(buf, offset, readBytes - offset).toLowerCase();
-
+		System.out.println("OPCODE: " + opcode);
+		System.out.println("FILENAME: " + fileName);
+		System.out.println("MODE: " + mode);
 		return opcode;
 	}
 
@@ -166,13 +172,16 @@ public class TFTPServer
 	 * @param requestedFile (name of file to read/write)
 	 * @param opcode (RRQ or WRQ)
 	 */
+
 	private void HandleRQ(DatagramSocket sendSocket, String requestedFile, int opcode)
 	{
 		if(opcode == OP_RRQ)
 		{
 			// See "TFTP Formats" in TFTP specification for the DATA and ACK packet contents
-			boolean result = send_DATA_receive_ACK(params);
+			boolean result = send_DATA_receive_ACK(sendSocket, requestedFile);
+			System.out.println("SENT SUCCESSFULLY: " + result);
 		}
+
 		else if (opcode == OP_WRQ)
 		{
 			boolean result = receive_DATA_send_ACK(params);
@@ -184,13 +193,47 @@ public class TFTPServer
 			send_ERR(params);
 			return;
 		}
+
 	}
 
 	/**
 	 To be implemented
 	 */
-	private boolean send_DATA_receive_ACK(params)
-	{return true;}
+
+	private boolean send_DATA_receive_ACK(DatagramSocket socket, String requestedFile)
+	{
+		try {
+			//form the packet to send
+
+			byte[] packet = new byte[512]; //right now has max length, we might want to change that
+			//set opcode
+			packet[0] = 0;
+			packet[1] = 3;
+
+			//set block number
+			packet[2] = 0;
+			packet[3] = 1;
+
+			byte[] file = Files.readAllBytes(Paths.get(requestedFile).normalize()); //read the file into byte array
+
+			//set data
+			for (int i = 0; i < file.length; i++)
+				packet[i+4] = file[i];
+
+			DatagramPacket sendPacket = new DatagramPacket(packet, packet.length, socket.getInetAddress(), socket.getPort());
+
+			socket.send(sendPacket);//send
+
+			//receving acknowledgement for packet
+			byte[] ACKbuf = new byte[4]; //ACK packet is 4 bytes long (RFC1350)
+			DatagramPacket receivePacket = new DatagramPacket(ACKbuf, ACKbuf.length);
+			socket.receive(receivePacket);
+			return true;
+		} catch (IOException e) {
+			e.printStackTrace();
+			return false;
+		}
+	}
 
 	private boolean receive_DATA_send_ACK(params)
 	{return true;}
