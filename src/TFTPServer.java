@@ -1,5 +1,6 @@
 import java.io.IOException;
 import java.net.*;
+import java.nio.ByteBuffer;
 
 public class TFTPServer
 {
@@ -128,11 +129,32 @@ public class TFTPServer
 	{
 		// See "TFTP Formats" in TFTP specification for the RRQ/WRQ request contents
 
-		int opcode = buf[1], //opcode is 0th and 1st bytes, but 0th byte is always 0 (I THINK)
-				position = 2; //filename starts right after opcode
+		ByteBuffer wrap= ByteBuffer.wrap(buf);
+		short opcode = wrap.getShort();
 
-		while (buf[position] != 0) //filename is followed by 1 byte of 0s
-			requestedFile.append(buf[position]);
+		// We can now parse the request message for opcode and requested file as:
+
+		int readBytes = 2;// where readBytes is the number of bytes read into the byte array buf.
+
+		//filename is followed by 1 byte of 0s
+		while (buf[readBytes] != 0)
+			readBytes ++;
+
+		String fileName = new String(buf, 2, readBytes-2);  //converts readBytes to the length of the filename
+
+		requestedFile.append(fileName); //Store the filename in the StringBuffer
+
+		//parse transfer mode, we are supposed to do that but I am not sure what to use it for atm
+		
+		int offset = readBytes; //save the offset for mode
+		readBytes ++; //"step over" 0 that signified the end of the filename
+
+		//mode is followed by 1 byte of 0s
+		while (buf[readBytes] != 0)
+			readBytes ++;
+
+		//readBytes - offset give length of the mode; saving the mode in lower case for convenience
+		String mode = new String(buf, offset, readBytes - offset).toLowerCase();
 
 		return opcode;
 	}
