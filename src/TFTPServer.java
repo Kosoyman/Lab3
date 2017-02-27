@@ -11,7 +11,7 @@ public class TFTPServer
 	private static final int TFTPPORT = 4970;
 	private static final int BUFSIZE = 516;
 	private static final String READDIR = "TFTP\\read\\";
-	private static final String WRITEDIR = "TFTP\\read\\"; //custom address at your PC
+	private static final String WRITEDIR = "TFTP\\write\\"; //custom address at your PC
 
 	// OP codes
 	private static final int OP_RRQ = 1;
@@ -227,7 +227,17 @@ public class TFTPServer
 			byte[] ACKbuf = new byte[4]; //ACK packet is 4 bytes long (RFC1350)
 			DatagramPacket receivePacket = new DatagramPacket(ACKbuf, ACKbuf.length);
 			socket.receive(receivePacket);
-			return true;
+
+			byte[] ACK = receivePacket.getData();
+            ByteBuffer wrap= ByteBuffer.wrap(ACK);
+
+            short opcode = wrap.getShort(); //parse opcode
+            short blockNumber = wrap.getShort(); //parse block number
+            System.out.println("ACK (?) OPCODE: " + opcode);
+            System.out.println("BLOCK NUMBER: " + blockNumber);
+
+            return (opcode == 4 && blockNumber == 1); //check that the ACK is correct and return the result
+
 		} catch (IOException e) {
 			e.printStackTrace();
 			return false;
@@ -239,6 +249,7 @@ public class TFTPServer
 
 	private void send_ERR(params)
 	{}
+
 }
 
 
