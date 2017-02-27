@@ -10,8 +10,8 @@ public class TFTPServer
 {
 	private static final int TFTPPORT = 4970;
 	private static final int BUFSIZE = 516;
-	private static final String READDIR = "C:\\Users\\maxkr\\IdeaProjects\\Lab3\\TFTP\\read\\"; //custom address at your PC
-	private static final String WRITEDIR = "/TFTP/write/"; //custom address at your PC
+	private static final String READDIR = "TFTP\\read\\";
+	private static final String WRITEDIR = "TFTP\\read\\"; //custom address at your PC
 
 	// OP codes
 	private static final int OP_RRQ = 1;
@@ -199,7 +199,7 @@ public class TFTPServer
 	/**
 	 To be implemented
 	 */
-
+	//TODO: right now works for files of size 508 or less bytes
 	private boolean send_DATA_receive_ACK(DatagramSocket socket, String requestedFile)
 	{
 		try {
@@ -217,8 +217,7 @@ public class TFTPServer
 			byte[] file = Files.readAllBytes(Paths.get(requestedFile).normalize()); //read the file into byte array
 
 			//set data
-			for (int i = 0; i < file.length; i++)
-				packet[i+4] = file[i];
+			System.arraycopy(file, 0, packet, 4, file.length);
 
 			DatagramPacket sendPacket = new DatagramPacket(packet, packet.length, socket.getInetAddress(), socket.getPort());
 
@@ -240,7 +239,6 @@ public class TFTPServer
 
 	private void send_ERR(params)
 	{}
-
 }
 
 
