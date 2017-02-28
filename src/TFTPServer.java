@@ -205,7 +205,12 @@ public class TFTPServer
                     packetPointer;
             InetAddress ip = socket.getInetAddress();
             int port = socket.getPort();
-            byte blockNumber = 0;
+
+            byte[] blockNumber = new byte[2];
+            ByteBuffer wrap= ByteBuffer.wrap(blockNumber);
+            short block = wrap.getShort();
+
+            blockNumber[0] = 0;
             byte[] file = Files.readAllBytes(Paths.get(requestedFile).normalize()),
                     packet;
             DatagramPacket sendPacket;
@@ -225,19 +230,9 @@ public class TFTPServer
                 packet[1] = 3;
 
                 //set block number
-                blockNumber++;
-
-                if (blockNumber <= 127) {
-                    packet[2] = 0;
-                    packet[3] = blockNumber;
-                }
-
-                //if the block number gets too big for byte #3 to hold, increment byte #2 and reset byte #3
-                else {
-                    packet[2] ++;
-                    blockNumber = 0;
-                    packet[3] = blockNumber;
-                }
+                block++;
+                packet[2] = (byte)((block >> 8) & 0xff);
+                packet[3] = (byte)(block & 0xff);
 
                 //copy as much as possible from file into the packet
                 for (packetPointer = 4; packetPointer < packet.length; packetPointer++) {
@@ -260,13 +255,13 @@ public class TFTPServer
                 System.out.println("BLOCK NUMBER: " + bn);
 
                 //if the block number is not ok
-                if (bn != blockNumber) {
+                if (bn != block) {
                     System.err.println("WRONG ACK: " + bn);
-                    while (bn != blockNumber) {
+                    while (bn != block) {
                         socket.send(sendPacket); //retransmit
                         System.out.println("RETRANSMITTED: " + bn);
                         bn = receive_ACK(socket); //receive ACK
-                        System.out.printf("RECEIVED %d ACK BUT EXPECTED %d\n", bn, blockNumber);
+                        System.out.printf("RECEIVED %d ACK BUT EXPECTED %d\n", bn, block);
                     }
                 }
             }
