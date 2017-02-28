@@ -202,21 +202,21 @@ public class TFTPServer
         try {
             //form the packet to send
             int  filePointer = 0,
-                    packetPointer;
+                    packetPointer,
+                    port = socket.getPort(),
+                    bytesLeft; //amount of bytes left to read from file
             InetAddress ip = socket.getInetAddress();
-            int port = socket.getPort();
 
-            byte[] blockNumber = new byte[2];
-            ByteBuffer wrap= ByteBuffer.wrap(blockNumber);
-            short block = wrap.getShort();
-
-            blockNumber[0] = 0;
             byte[] file = Files.readAllBytes(Paths.get(requestedFile).normalize()),
-                    packet;
+                    packet,
+                    block = new byte[2];
             DatagramPacket sendPacket;
 
+            ByteBuffer wrap= ByteBuffer.wrap(block);
+            short blockNumber = wrap.getShort();
+
             while (filePointer < file.length -1) {
-                int bytesLeft = file.length - filePointer;
+                bytesLeft = file.length - filePointer;
 
                 //check if the package is the final one
                 if(bytesLeft < 512)
@@ -230,20 +230,15 @@ public class TFTPServer
                 packet[1] = 3;
 
                 //set block number
-                block++;
-                packet[2] = (byte)((block >> 8) & 0xff);
-                packet[3] = (byte)(block & 0xff);
+                blockNumber++;
+                packet[2] = (byte)((blockNumber >> 8) & 0xff);
+                packet[3] = (byte)(blockNumber & 0xff);
 
                 //copy as much as possible from file into the packet
                 for (packetPointer = 4; packetPointer < packet.length; packetPointer++) {
 
-                    if(filePointer < file.length){
-                        packet[packetPointer] = file[filePointer];
-                        filePointer++;
-                    }
-
-                    else
-                        break;
+                    packet[packetPointer] = file[filePointer];
+                    filePointer++;
                 }
 
                 sendPacket = new DatagramPacket(packet, packet.length, ip, port);
@@ -255,13 +250,13 @@ public class TFTPServer
                 System.out.println("BLOCK NUMBER: " + bn);
 
                 //if the block number is not ok
-                if (bn != block) {
+                if (bn != blockNumber) {
                     System.err.println("WRONG ACK: " + bn);
-                    while (bn != block) {
+                    while (bn != blockNumber) {
                         socket.send(sendPacket); //retransmit
                         System.out.println("RETRANSMITTED: " + bn);
                         bn = receive_ACK(socket); //receive ACK
-                        System.out.printf("RECEIVED %d ACK BUT EXPECTED %d\n", bn, block);
+                        System.out.printf("RECEIVED %d ACK BUT EXPECTED %d\n", bn, blockNumber);
                     }
                 }
             }
