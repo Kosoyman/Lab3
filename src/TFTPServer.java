@@ -211,7 +211,14 @@ public class TFTPServer
             DatagramPacket sendPacket;
 
             while (filePointer < file.length -1) {
-                packet = new byte[516];
+                int bytesLeft = file.length - filePointer;
+
+                //check if the package is the final one
+                if(bytesLeft < 512)
+                    packet = new byte[bytesLeft + 4]; //+4 for the header
+
+                else
+                    packet = new byte [516]; //otherwise set size to max
 
                 //set opcode
                 packet[0] = 0;
@@ -220,11 +227,13 @@ public class TFTPServer
                 //set block number
                 blockNumber++;
 
-                if (blockNumber < 256) {
+                if (blockNumber <= 127) {
                     packet[2] = 0;
                     packet[3] = blockNumber;
-                    //if the block number gets too big for byte #3 to hold, increment byte #2 and reset byte #3
-                } else {
+                }
+
+                //if the block number gets too big for byte #3 to hold, increment byte #2 and reset byte #3
+                else {
                     packet[2] ++;
                     blockNumber = 0;
                     packet[3] = blockNumber;
@@ -232,10 +241,12 @@ public class TFTPServer
 
                 //copy as much as possible from file into the packet
                 for (packetPointer = 4; packetPointer < packet.length; packetPointer++) {
+
                     if(filePointer < file.length){
                         packet[packetPointer] = file[filePointer];
                         filePointer++;
                     }
+
                     else
                         break;
                 }
@@ -250,10 +261,12 @@ public class TFTPServer
 
                 //if the block number is not ok
                 if (bn != blockNumber) {
-
+                    System.err.println("WRONG ACK: " + bn);
                     while (bn != blockNumber) {
                         socket.send(sendPacket); //retransmit
+                        System.out.println("RETRANSMITTED: " + bn);
                         bn = receive_ACK(socket); //receive ACK
+                        System.out.printf("RECEIVED %d ACK BUT EXPECTED %d\n", bn, blockNumber);
                     }
                 }
             }
@@ -273,13 +286,15 @@ public class TFTPServer
             byte[] ACK = receivePacket.getData();
             ByteBuffer wrap= ByteBuffer.wrap(ACK);
 
-            short opcode = wrap.getShort(); //parse opcode
+            short opcode = wrap.getShort(), //parse opcode
+                    blockNumber = wrap.getShort(); //parse block number
+
             if(opcode == OP_ACK) {
-                return wrap.getShort(); //parse block number
+                return blockNumber;
             }
 
         } catch (IOException e) {
-            e.printStackTrace();
+            //e.printStackTrace();
         }
         return -1;
     }
