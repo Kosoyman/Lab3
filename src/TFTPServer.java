@@ -1,3 +1,5 @@
+import com.sun.media.sound.InvalidDataException;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -20,6 +22,9 @@ public class TFTPServer
     private static final int OP_DAT = 3;
     private static final int OP_ACK = 4;
     private static final int OP_ERR = 5;
+
+    private static final int WAIT_FOR_ACK_LIMIT = 200; // Specifies how long we should wait for a ACK before re-transmitting
+    private static final int MAXIMUM_RETRIES = 10; // Maximum re-transmitting tries
 
     public static void main(String[] args) {
         if (args.length > 0)
@@ -151,8 +156,8 @@ public class TFTPServer
 
         //parse transfer mode, we are supposed to do that but I am not sure what to use it for atm
 
-        int offset = readBytes; //save the offset for mode
         readBytes ++; //"step over" 0 that signified the end of the filename
+        int offset = readBytes; //save the offset for mode
 
         //mode is followed by 1 byte of 0s
         while (buf[readBytes] != 0)
@@ -220,6 +225,7 @@ public class TFTPServer
             short blockNumber = wrap.getShort();
 
             while (filePointer < file.length -1) {
+
                 bytesLeft = file.length - filePointer;
 
                 //check if the package is the final one
@@ -246,23 +252,64 @@ public class TFTPServer
                 }
 
                 sendPacket = new DatagramPacket(packet, packet.length, ip, port);
-                socket.send(sendPacket);//send
+                socket.send(sendPacket); //send
 
-                //receiving acknowledgement for packet
-                short bn  = receive_ACK(socket);
+                // Counter keeping track of retransmission tries
+                int reTransmitCounter = 0;
 
-                System.out.println("BLOCK NUMBER: " + bn);
+                boolean correctBn = false;
+                boolean maxRetries = false;
 
-                //if the block number is not ok
-                if (bn != blockNumber) {
-                    System.err.println("WRONG ACK: " + bn);
-                    while (bn != blockNumber) {
-                        socket.send(sendPacket); //retransmit
-                        System.out.println("RETRANSMITTED: " + bn);
-                        bn = receive_ACK(socket); //receive ACK
-                        System.out.printf("RECEIVED %d ACK BUT EXPECTED %d\n", bn, blockNumber);
+                // Do retransmissions as needed.
+                while (!correctBn && !maxRetries)
+                {
+                    try
+                    {
+                        short bn = receive_ACK(socket);
+
+                        if (bn == blockNumber)
+                        {
+                            correctBn = true;
+                        }
+                        else
+                        {
+                            System.out.println("INCORRECT ACK NUMBER RECEIVED.");
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        System.out.println(e.getMessage());
+                    }
+
+                    if (!correctBn)
+                    {
+                        // Check if max retries has been reached
+                        if (reTransmitCounter == MAXIMUM_RETRIES)
+                        {
+                            maxRetries = true;
+                        }
+                        else
+                        {
+                            // Re-transmit
+                            reTransmitCounter++;
+                            System.out.println("RETRANSMITTING BLOCK: " + blockNumber);
+                            socket.send(sendPacket); //send
+                        }
                     }
                 }
+
+                // Check if all retransmissions failed
+                if (!correctBn)
+                {
+                    // Send Error-packet before terminating (Method not implemented yet)
+                    //send_ERR(params)
+
+                    // For debugging purposes
+                    System.out.println("Maximum number of retransmissions reached. Giving up, closing connection.");
+
+                    return false;
+                }
+
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -271,10 +318,20 @@ public class TFTPServer
         return true;
     }
 
-    private short receive_ACK(DatagramSocket socket){
+    /**
+     * Help-method to extract a block-number from a ACK-packet. Use this method when sending packets and an ACK is expected.
+     * @param socket socket used for client communication
+     * @return blocknumber
+     * @throws IOException in case of incorrect package type, package timeout or IO-error
+     */
+    private short receive_ACK(DatagramSocket socket) throws IOException {
+
         byte[] ACKbuf = new byte[4]; //ACK packet is 4 bytes long (RFC1350)
         DatagramPacket receivePacket = new DatagramPacket(ACKbuf, ACKbuf.length);
         try {
+
+            // Set timeout limit so we don't wait until forever.
+            socket.setSoTimeout(WAIT_FOR_ACK_LIMIT);
             socket.receive(receivePacket);
 
             byte[] ACK = receivePacket.getData();
@@ -286,11 +343,19 @@ public class TFTPServer
             if(opcode == OP_ACK) {
                 return blockNumber;
             }
+            else
+            {
+                throw new InvalidDataException("RECEIVED PACKET NOT OF TYPE ACK");
+            }
 
-        } catch (IOException e) {
-            //e.printStackTrace();
         }
-        return -1;
+        catch (SocketTimeoutException e) {
+            throw new SocketTimeoutException("NO ACK RECEIVED WITHIN REASONABLE TIME");
+        }
+        catch (IOException e) {
+            throw new IOException("CONNECTION PROBLEM");
+        }
+
     }
 
     private boolean receive_DATA_send_ACK(DatagramSocket socket, String requestedFile){
