@@ -1,3 +1,6 @@
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.*;
 import java.nio.ByteBuffer;
@@ -8,8 +11,8 @@ public class TFTPServer
 {
     private static final int TFTPPORT = 4970;
     private static final int BUFSIZE = 516;
-    private static final String READDIR = "TFTP\\read\\";
-    private static final String WRITEDIR = "TFTP\\write\\"; //custom address at your PC
+    private static final String READDIR = "TFTP/read/";
+    private static final String WRITEDIR = "TFTP/write/"; //custom address at your PC
 
     // OP codes
     private static final int OP_RRQ = 1;
@@ -179,11 +182,12 @@ public class TFTPServer
             boolean result = send_DATA_receive_ACK(sendSocket, requestedFile);
             System.out.println("SENT SUCCESSFULLY: " + result);
         }
-/*
-		else if (opcode == OP_WRQ)
-		{
-			boolean result = receive_DATA_send_ACK(params);
-		}
+
+        else if (opcode == OP_WRQ)
+        {
+            boolean result = receive_DATA_send_ACK(sendSocket, requestedFile);
+        }
+		/*
 		else
 		{
 			System.err.println("Invalid request. Sending an error packet.");
@@ -288,10 +292,94 @@ public class TFTPServer
         }
         return -1;
     }
-/*
-	private boolean receive_DATA_send_ACK(params)
-	{return true;}
 
+    private boolean receive_DATA_send_ACK(DatagramSocket socket, String requestedFile){
+        byte[] file = new byte[512],
+                packet = null,
+                temp,
+                ACK = new byte[4];
+        short currentBN = 0,
+                incomingBN;
+        int bytes = 0,
+                totalBytes = 0;
+        ACK[0] = 0;
+        ACK[1] = 4;
+        ACK[2] = (byte)((currentBN >> 8) & 0xff);
+        ACK[3] = (byte)(currentBN & 0xff);
+
+        DatagramPacket receivePacket,
+                ackPacket = new DatagramPacket(ACK, ACK.length, socket.getInetAddress(), socket.getPort());
+        try {
+            socket.send(ackPacket);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        do {
+            try {
+                bytes = 0;
+                packet = new byte[516];
+                receivePacket = new DatagramPacket(packet, packet.length);
+
+                socket.receive(receivePacket);
+                packet = receivePacket.getData();
+                if(emptyArr(packet))
+                    break;
+                ByteBuffer wrap= ByteBuffer.wrap(packet);
+                wrap.getShort();
+                incomingBN = wrap.getShort();
+                if (incomingBN == currentBN + 1)
+                {
+                    currentBN = incomingBN;
+                    for (int i = 4; i < packet.length; i++)
+                    {
+                            file[i - 4] = packet[i];
+                            bytes++;
+                    }
+                    totalBytes += bytes;
+                    System.out.printf("BYTES: %d\n", bytes);
+                    temp = new byte[file.length];
+                    System.arraycopy(file,0, temp,0, bytes);
+                    file = new byte[totalBytes * 2];
+                    System.arraycopy(temp,0, file, 0, totalBytes);
+                }
+
+                ACK[0] = 0;
+                ACK[1] = 4;
+                ACK[2] = (byte)((currentBN >> 8) & 0xff);
+                ACK[3] = (byte)(currentBN & 0xff);
+
+                ackPacket = new DatagramPacket(ACK, ACK.length, socket.getInetAddress(), socket.getPort());
+                socket.send(ackPacket);
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } while (!emptyArr(packet) );
+
+        FileOutputStream fos = null;
+
+        try {
+            fos = new FileOutputStream(requestedFile);
+            fos.write(file);
+            fos.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        System.out.printf("SUCCESS\n");
+        return true;
+    }
+    private boolean emptyArr (byte[] arr)
+    {
+        for (byte element : arr) {
+            if (element != 0)
+                return false;
+        }
+        return true;
+    }
+/*
 	private void send_ERR(params)
 	{}
 */
