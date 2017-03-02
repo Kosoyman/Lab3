@@ -1,7 +1,4 @@
 import com.sun.media.sound.InvalidDataException;
-
-import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.*;
@@ -23,7 +20,7 @@ public class TFTPServer
     private static final int OP_ACK = 4;
     private static final int OP_ERR = 5;
 
-    private static final int WAIT_FOR_ACK_LIMIT = 200; // Specifies how long we should wait for a ACK before re-transmitting
+    private static final int WAITING_LIMIT = 200; // Specifies how long we should wait for a ACK before re-transmitting
     private static final int MAXIMUM_RETRIES = 10; // Maximum re-transmitting tries
 
     public static void main(String[] args) {
@@ -238,7 +235,7 @@ public class TFTPServer
 
                 //set opcode
                 packet[0] = 0;
-                packet[1] = 3;
+                packet[1] = OP_DAT;
 
                 //set block number
                 blockNumber++;
@@ -332,7 +329,7 @@ public class TFTPServer
         try {
 
             // Set timeout limit so we don't wait until forever.
-            socket.setSoTimeout(WAIT_FOR_ACK_LIMIT);
+            socket.setSoTimeout(WAITING_LIMIT);
             socket.receive(receivePacket);
 
             byte[] ACK = receivePacket.getData();
@@ -379,7 +376,7 @@ public class TFTPServer
 
         //set opcode
         ACK[0] = 0;
-        ACK[1] = 4;
+        ACK[1] = OP_ACK;
 
         //set block number
         ACK[2] = (byte)((currentBN >> 8) & 0xff);
@@ -396,7 +393,7 @@ public class TFTPServer
                     //receive packet
                     packet = new byte[516]; //reset the packet array
                     receivePacket = new DatagramPacket(packet, packet.length);
-                    socket.setSoTimeout(WAIT_FOR_ACK_LIMIT); //set timeout
+                    socket.setSoTimeout(WAITING_LIMIT); //set timeout
                     socket.receive(receivePacket);
 
                     //process received packet
@@ -424,7 +421,7 @@ public class TFTPServer
 
                     //set opcode
                     ACK[0] = 0;
-                    ACK[1] = 4;
+                    ACK[1] = OP_ACK;
 
                     //set block number
                     ACK[2] = (byte) ((currentBN >> 8) & 0xff);
@@ -460,7 +457,7 @@ public class TFTPServer
             e.printStackTrace();
             return false;
         }
-        
+
         return true;
 
     }
