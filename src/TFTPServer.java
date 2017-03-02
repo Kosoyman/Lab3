@@ -358,85 +358,119 @@ public class TFTPServer
 
     }
 
+    /**
+     * Sends ACK to establish "connection", receives packets and sends ACKs
+     * @param socket - Datagram socket
+     * @param requestedFile - name of the file that will be saved
+     * @return - returns false if IOException is thrown, otherwise returns true
+     */
     private boolean receive_DATA_send_ACK(DatagramSocket socket, String requestedFile){
-        byte[] file = new byte[512],
-                packet = null,
-                temp,
-                ACK = new byte[4];
-        short currentBN = 0,
-                incomingBN;
-        int bytes = 0,
-                totalBytes = 0;
+        byte[] fileBuf = new byte[512], //temporary storage for the file bytes
+                file, //full file bytes
+                packet = null, //packet array
+                temp, //temporary array, used for increasing the size of fileBuf
+                ACK = new byte[4]; //ACKnowledgement array
+        short currentBN = 0, //block number of the last received packet
+                incomingBN; //block number of the incoming packet
+        int totalBytes = 0; //total amount of bytes read
+
+        //send an acknowledgement to establish connection
+
+        //set opcode
         ACK[0] = 0;
         ACK[1] = 4;
+
+        //set block number
         ACK[2] = (byte)((currentBN >> 8) & 0xff);
         ACK[3] = (byte)(currentBN & 0xff);
 
         DatagramPacket receivePacket,
                 ackPacket = new DatagramPacket(ACK, ACK.length, socket.getInetAddress(), socket.getPort());
+
         try {
-            socket.send(ackPacket);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+            socket.send(ackPacket); //send ACK packet
 
-        do {
-            try {
-                bytes = 0;
-                packet = new byte[516];
-                receivePacket = new DatagramPacket(packet, packet.length);
+            do {
+                try {
+                    //receive packet
+                    packet = new byte[516]; //reset the packet array
+                    receivePacket = new DatagramPacket(packet, packet.length);
+                    socket.setSoTimeout(WAIT_FOR_ACK_LIMIT); //set timeout
+                    socket.receive(receivePacket);
 
-                socket.receive(receivePacket);
-                packet = receivePacket.getData();
-                if(emptyArr(packet))
-                    break;
-                ByteBuffer wrap= ByteBuffer.wrap(packet);
-                wrap.getShort();
-                incomingBN = wrap.getShort();
-                if (incomingBN == currentBN + 1)
-                {
-                    currentBN = incomingBN;
-                    for (int i = 4; i < packet.length; i++)
-                    {
-                            file[i - 4] = packet[i];
-                            bytes++;
+                    //process received packet
+                    packet = receivePacket.getData();
+                    ByteBuffer wrap= ByteBuffer.wrap(packet);
+                    wrap.getShort(); //the first short is opcode, right now is just skipped over
+                    incomingBN = wrap.getShort();
+
+                    if (incomingBN == currentBN + 1 && !isEmpty(packet)) { //check if the bn is ok and that the packet is not empty
+                        currentBN = incomingBN;
+
+                        //copy the contents of the packet into fileBuf
+                        for (int i = 4; i < packet.length; i++) {
+                            fileBuf[totalBytes] = packet[i];
+                            totalBytes++;
+                        }
+
+                        //increase the size of filBuf by 512, so next packet data will fit
+                        temp = new byte[fileBuf.length];
+                        System.arraycopy(fileBuf, 0, temp, 0, fileBuf.length);
+                        fileBuf = new byte[totalBytes + 512];
+                        System.arraycopy(temp, 0, fileBuf, 0, totalBytes);
+
                     }
-                    totalBytes += bytes;
-                    System.out.printf("BYTES: %d\n", bytes);
-                    temp = new byte[file.length];
-                    System.arraycopy(file,0, temp,0, bytes);
-                    file = new byte[totalBytes * 2];
-                    System.arraycopy(temp,0, file, 0, totalBytes);
+
+                    //set opcode
+                    ACK[0] = 0;
+                    ACK[1] = 4;
+
+                    //set block number
+                    ACK[2] = (byte) ((currentBN >> 8) & 0xff);
+                    ACK[3] = (byte) (currentBN & 0xff);
+
+                    //send ACK
+                    ackPacket = new DatagramPacket(ACK, ACK.length, socket.getInetAddress(), socket.getPort());
+                    socket.send(ackPacket);
+
+
+                    //right now happens 100% of the time
+                } catch (SocketTimeoutException e) {
+                    System.out.printf("The client stopped sending\n");
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    return false;
                 }
 
-                ACK[0] = 0;
-                ACK[1] = 4;
-                ACK[2] = (byte)((currentBN >> 8) & 0xff);
-                ACK[3] = (byte)(currentBN & 0xff);
+            } while (!isEmpty(packet));
 
-                ackPacket = new DatagramPacket(ACK, ACK.length, socket.getInetAddress(), socket.getPort());
-                socket.send(ackPacket);
+            //save file
+            FileOutputStream fos;
 
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        } while (!emptyArr(packet) );
+            //get bytes from fileBuf into file array
+            file = new byte[totalBytes];
+            System.arraycopy(fileBuf,0, file, 0, totalBytes);
 
-        FileOutputStream fos = null;
-
-        try {
             fos = new FileOutputStream(requestedFile);
             fos.write(file);
             fos.close();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
+
         } catch (IOException e) {
             e.printStackTrace();
+            return false;
         }
+
         System.out.printf("SUCCESS\n");
         return true;
+
     }
-    private boolean emptyArr (byte[] arr)
+
+    /**
+     * Checks if a byte array contains only 0s
+     * @param arr - byte array that should be checked
+     * @return true if array contains only 0s, false otherwise
+     */
+    private boolean isEmpty (byte[] arr)
     {
         for (byte element : arr) {
             if (element != 0)
