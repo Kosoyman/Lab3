@@ -191,6 +191,7 @@ public class TFTPServer
         else if (opcode == OP_WRQ)
         {
             boolean result = receive_DATA_send_ACK(sendSocket, requestedFile);
+            System.out.println("RECEIVED SUCCESSFULLY: " + result);
         }
 		/*
 		else
@@ -459,8 +460,7 @@ public class TFTPServer
             e.printStackTrace();
             return false;
         }
-
-        System.out.printf("SUCCESS\n");
+        
         return true;
 
     }
