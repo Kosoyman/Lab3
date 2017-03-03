@@ -1,10 +1,12 @@
 import com.sun.media.sound.InvalidDataException;
+
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.*;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.nio.file.*;
+import java.util.Arrays;
 
 public class TFTPServer
 {
@@ -22,6 +24,21 @@ public class TFTPServer
 
     private static final int WAITING_LIMIT = 200; // Specifies how long we should wait for a ACK before re-transmitting
     private static final int MAXIMUM_RETRIES = 10; // Maximum re-transmitting tries
+
+    // Constants related to error packets
+    private static final int ERR_NOT_DEFINED = 0;
+    private static final int ERR_FILE_NOT_FOUND = 1;
+    private static final int ERR_ACCESS_VIOLATION = 2;
+    private static final int ERR_DISK_FULL = 3;
+    private static final int ERR_ILLEGAL_OPERATION = 4;
+    private static final int ERR_UNKNOWN_TRANSFER_ID = 5;
+    private static final int ERR_FILE_ALREADY_EXISTS = 6;
+    private static final int ERR_NO_SUCH_USER = 7;
+
+    // Corresponding error messages to the error codes above
+    public static final String[] ERROR_MESSAGES = {"", "File not found.", "Access violation.", "Disk full or allocation exceeded.",
+            "Illegal TFTP operation.", "Unknown transfer ID.", "File already exists.", "No such user."};
+
 
     public static void main(String[] args) {
         if (args.length > 0)
@@ -85,13 +102,20 @@ public class TFTPServer
                         {
                             requestedFile.insert(0, READDIR);
                             HandleRQ(sendSocket, requestedFile.toString(), OP_RRQ);
+                            //send_ERR(sendSocket, ERR_DISK_FULL);
                         }
                         // Write request
-                        else
+                        else if (reqtype == OP_WRQ)
                         {
                             requestedFile.insert(0, WRITEDIR);
                             HandleRQ(sendSocket,requestedFile.toString(),OP_WRQ);
                         }
+                        // Unsupported request
+                        else
+                        {
+                            send_ERR(sendSocket, ERR_ILLEGAL_OPERATION);
+                        }
+
                         sendSocket.close();
                     }
                     catch (SocketException e)
@@ -190,15 +214,13 @@ public class TFTPServer
             boolean result = receive_DATA_send_ACK(sendSocket, requestedFile);
             System.out.println("RECEIVED SUCCESSFULLY: " + result);
         }
-		/*
+
 		else
 		{
-			System.err.println("Invalid request. Sending an error packet.");
+			System.err.println("Invalid request from client. Sending an error packet.");
 			// See "TFTP Formats" in TFTP specification for the ERROR packet contents
-			send_ERR(params);
-			return;
+			send_ERR(sendSocket, ERR_ILLEGAL_OPERATION);
 		}
-*/
     }
 
     /**
@@ -276,6 +298,7 @@ public class TFTPServer
                     }
                     catch (Exception e)
                     {
+                        // Print
                         System.out.println(e.getMessage());
                     }
 
@@ -300,7 +323,7 @@ public class TFTPServer
                 if (!correctBn)
                 {
                     // Send Error-packet before terminating (Method not implemented yet)
-                    //send_ERR(params)
+                    send_ERR(socket, ERR_NOT_DEFINED, "Maximum number of retransmissions reached.");
 
                     // For debugging purposes
                     System.out.println("Maximum number of retransmissions reached. Giving up, closing connection.");
@@ -309,7 +332,13 @@ public class TFTPServer
                 }
 
             }
-        } catch (IOException e) {
+        }
+        catch (NoSuchFileException e)
+        {
+            send_ERR(socket, ERR_FILE_NOT_FOUND);
+            return false;
+        }
+        catch (IOException e) {
             e.printStackTrace();
             return false;
         }
@@ -362,7 +391,10 @@ public class TFTPServer
      * @param requestedFile - name of the file that will be saved
      * @return - returns false if IOException is thrown, otherwise returns true
      */
-    private boolean receive_DATA_send_ACK(DatagramSocket socket, String requestedFile){
+    private boolean receive_DATA_send_ACK(DatagramSocket socket, String requestedFile) {
+
+
+
         byte[] fileBuf = new byte[512], //temporary storage for the file bytes
                 file, //full file bytes
                 packet = null, //packet array
@@ -386,6 +418,25 @@ public class TFTPServer
                 ackPacket = new DatagramPacket(ACK, ACK.length, socket.getInetAddress(), socket.getPort());
 
         try {
+
+            Path testFilePath = Paths.get(requestedFile).normalize();
+
+            // First make user user has provided only a filename without directory structure
+            if (Files.exists(testFilePath))
+            {
+                throw new FileAlreadyExistsException("File already exists!");
+            }
+            else
+            {
+                // Try to create a file to see that it's possible to write to path.
+                // Will throw Exception if failing, which we catch later
+                Files.createFile(testFilePath);
+
+                // If we could create the file we should delete it before moving on
+                Files.delete(testFilePath);
+
+            }
+
             socket.send(ackPacket); //send ACK packet
 
             do {
@@ -453,13 +504,29 @@ public class TFTPServer
             fos.write(file);
             fos.close();
 
-        } catch (IOException e) {
+        }
+        catch (FileAlreadyExistsException e)
+        {
+            // Debug
+            System.out.println(e.getMessage());
+
+            send_ERR(socket, ERR_FILE_ALREADY_EXISTS);
+            return false;
+        }
+        catch (NoSuchFileException e)
+        {
+            // Debug
+            System.out.println("User specified an invalid path along with the filename. sending error message");
+
+            send_ERR(socket, ERR_ACCESS_VIOLATION);
+            return false;
+        }
+        catch (IOException e) {
             e.printStackTrace();
             return false;
         }
 
         return true;
-
     }
 
     /**
@@ -475,10 +542,63 @@ public class TFTPServer
         }
         return true;
     }
-/*
-	private void send_ERR(params)
-	{}
-*/
+
+    /**
+     * Sends an error-message to receiver
+     * @param socket client connection socket
+     * @param errorCode Error code (0-7 supported)
+     * @return true if error message is sent, false otherwise
+     */
+    private boolean send_ERR(DatagramSocket socket, int errorCode)
+    {
+        return send_ERR(socket, errorCode, ERROR_MESSAGES[errorCode]);
+    }
+
+    /**
+     * Sends an error-message to receiver
+     * @param socket client connection socket
+     * @param errorCode Error code (0-7 supported)
+     * @param message Error message
+     * @return true if error message is sent, false otherwise
+     */
+    private boolean send_ERR(DatagramSocket socket, int errorCode, String message) {
+
+        byte[] mess = message.getBytes();
+
+        // + 5 so we got space for Opcode, error-code and terminating byte
+        byte[] buf = new byte[mess.length + 5];
+
+        // Set opcode
+        buf[0] = 0;
+        buf[1] = OP_ERR;
+
+        // Set error-code
+        buf[2] = 0;
+        buf[3] = (byte) errorCode;
+
+        // Copy message contents to buffer
+        for (int i = 0; i < mess.length; i++)
+        {
+            buf[4+i] = mess[i];
+        }
+
+        // Set terminating byte in the end
+        buf[buf.length -1] = 0;
+
+        // Create datapacket and send message
+        DatagramPacket errorPacket = new DatagramPacket(buf, buf.length, socket.getInetAddress(), socket.getPort());
+
+        try
+        {
+            socket.send(errorPacket);
+        }
+        catch (IOException e)
+        {
+            return false;
+        }
+
+        return true;
+    }
 }
 
 
