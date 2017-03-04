@@ -1,8 +1,7 @@
 import com.sun.media.sound.InvalidDataException;
 
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import javax.naming.SizeLimitExceededException;
+import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.file.*;
@@ -22,6 +21,7 @@ public class TFTPServer
     private static final int OP_ACK = 4;
     private static final int OP_ERR = 5;
 
+    // Constants related to retransmissions
     private static final int WAITING_LIMIT = 200; // Specifies how long we should wait for a ACK before re-transmitting
     private static final int MAXIMUM_RETRIES = 10; // Maximum re-transmitting tries
 
@@ -39,6 +39,10 @@ public class TFTPServer
     public static final String[] ERROR_MESSAGES = {"", "File not found.", "Access violation.", "Disk full or allocation exceeded.",
             "Illegal TFTP operation.", "Unknown transfer ID.", "File already exists.", "No such user."};
 
+    // Constants related to size limit for write folder
+    private static int BYTES_PER_KB = 1024;
+    private static int KB_PER_MB = 1024;
+    private static int WRITE_FOLDER_SIZE_LIMIT = 10 * KB_PER_MB * BYTES_PER_KB;
 
     public static void main(String[] args) {
         if (args.length > 0)
@@ -236,6 +240,7 @@ public class TFTPServer
                     bytesLeft; //amount of bytes left to read from file
             InetAddress ip = socket.getInetAddress();
 
+            //
             byte[] file = Files.readAllBytes(Paths.get(requestedFile).normalize()),
                     packet,
                     block = new byte[2];
@@ -298,7 +303,7 @@ public class TFTPServer
                     }
                     catch (Exception e)
                     {
-                        // Print
+                        // In case of any problems with receiving ACK, print exception message for debugging purposes
                         System.out.println(e.getMessage());
                     }
 
@@ -319,10 +324,10 @@ public class TFTPServer
                     }
                 }
 
-                // Check if all retransmissions failed
+                // Check if we have failed all transmissions
                 if (!correctBn)
                 {
-                    // Send Error-packet before terminating (Method not implemented yet)
+                    // Send Error-packet before terminating
                     send_ERR(socket, ERR_NOT_DEFINED, "Maximum number of retransmissions reached.");
 
                     // For debugging purposes
@@ -391,7 +396,7 @@ public class TFTPServer
      * @param requestedFile - name of the file that will be saved
      * @return - returns false if IOException is thrown, otherwise returns true
      */
-    private boolean receive_DATA_send_ACK(DatagramSocket socket, String requestedFile) {
+    private boolean receive_DATA_send_ACK(DatagramSocket socket, String requestedFile){
 
 
 
@@ -441,6 +446,7 @@ public class TFTPServer
 
             do {
                 try {
+
                     //receive packet
                     packet = new byte[516]; //reset the packet array
                     receivePacket = new DatagramPacket(packet, packet.length);
@@ -455,6 +461,9 @@ public class TFTPServer
 
                     if (incomingBN == currentBN + 1 && !isEmpty(packet)) { //check if the bn is ok and that the packet is not empty
                         currentBN = incomingBN;
+
+                        // Counter to check data-size
+                        int packetDataSizeCounter = 0;
 
                         //copy the contents of the packet into fileBuf
                         for (int i = 4; i < packet.length; i++) {
@@ -493,6 +502,13 @@ public class TFTPServer
 
             } while (!isEmpty(packet));
 
+
+            // Make sure we have enough space left in write-folder
+            if (!hasEnoughSpace(totalBytes))
+            {
+                throw new SizeLimitExceededException("Not enough disk space for storing file!");
+            }
+
             //save file
             FileOutputStream fos;
 
@@ -504,6 +520,14 @@ public class TFTPServer
             fos.write(file);
             fos.close();
 
+        }
+        catch (SizeLimitExceededException e)
+        {
+            // Debug
+            System.out.println(e.getMessage());
+
+            send_ERR(socket, ERR_DISK_FULL);
+            return false;
         }
         catch (FileAlreadyExistsException e)
         {
@@ -598,6 +622,56 @@ public class TFTPServer
         }
 
         return true;
+    }
+
+    /**
+     * Checks if there's enough storage in write-folder for storing a file
+     * @param fileSize Size of file
+     * @return true if enough space, false otherwise
+     */
+    private boolean hasEnoughSpace(long fileSize) throws IOException
+    {
+        /* Debug
+        System.out.println("Size limit: " + WRITE_FOLDER_SIZE_LIMIT);
+        System.out.println("Current folder size: " + getFolderSize(WRITEDIR));
+        System.out.println("File Size: " + fileSize);
+
+        System.out.println("New size for folder will be: " + (getFolderSize(WRITEDIR) + fileSize));
+        */
+
+        return (getFolderSize(WRITEDIR) + fileSize) <= WRITE_FOLDER_SIZE_LIMIT;
+    }
+
+    /**
+     * Calculates the size of a directory by traversing the directory-structure and checking the size of each file
+     * @param filePath Directory path
+     * @return total size of directory in bytes
+     */
+    private long getFolderSize(String filePath)
+    {
+        // Source/Inspiration for codeblock below: http://www.baeldung.com/java-folder-size
+        File dir = new File(filePath);
+
+        File[] filesinDir = dir.listFiles();
+
+        long directorySize = 0;
+
+        // traverse through dir structure
+        for (int i=0; i < filesinDir.length; i++)
+        {
+            File currentFile = filesinDir[i];
+
+            if (currentFile.isFile())
+            {
+                directorySize += currentFile.length();
+            }
+            else
+            {
+                // Recursive call for subdirectories
+                directorySize += getFolderSize(currentFile.getPath());
+            }
+        }
+        return directorySize;
     }
 }
 
