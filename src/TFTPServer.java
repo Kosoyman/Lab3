@@ -419,7 +419,7 @@ public class TFTPServer
         ACK[2] = (byte)((currentBN >> 8) & 0xff);
         ACK[3] = (byte)(currentBN & 0xff);
 
-        DatagramPacket receivePacket,
+        DatagramPacket receivePacket = null,
                 ackPacket = new DatagramPacket(ACK, ACK.length, socket.getInetAddress(), socket.getPort());
 
         try {
@@ -459,7 +459,7 @@ public class TFTPServer
                     wrap.getShort(); //the first short is opcode, right now is just skipped over
                     incomingBN = wrap.getShort();
 
-                    if (incomingBN == currentBN + 1 && !isEmpty(packet)) { //check if the bn is ok and that the packet is not empty
+                    if (incomingBN == currentBN + 1) { //check if the bn is ok and that the packet is not empty
                         currentBN = incomingBN;
 
                         // Counter to check data-size
@@ -500,7 +500,7 @@ public class TFTPServer
                     return false;
                 }
 
-            } while (!isEmpty(packet));
+            } while (receivePacket.getLength() == 516);
 
 
             // Make sure we have enough space left in write-folder
@@ -550,20 +550,6 @@ public class TFTPServer
             return false;
         }
 
-        return true;
-    }
-
-    /**
-     * Checks if a byte array contains only 0s
-     * @param arr - byte array that should be checked
-     * @return true if array contains only 0s, false otherwise
-     */
-    private boolean isEmpty (byte[] arr)
-    {
-        for (byte element : arr) {
-            if (element != 0)
-                return false;
-        }
         return true;
     }
 
