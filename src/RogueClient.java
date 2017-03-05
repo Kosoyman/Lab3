@@ -63,22 +63,23 @@ public class RogueClient
         // Initial connection on static server port
 
         //sendWriteRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa2.png");
-        sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
-        DatagramPacket ackFromServer = receiveNextPacket(socket);
-
+        //sendIllegalOpCodeRequest(socket, REMOTE_BIND_PORT_INITIAL, ILLEGAL_OP_CODE);
+        //sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
+        //DatagramPacket ackFromServer = receiveNextPacket(socket);
+        sendDataPacket(socket, REMOTE_BIND_PORT_INITIAL, "lol");
         // Create a new bind port for the established connection (New port number)
-        SocketAddress remoteBindPoint = new InetSocketAddress(ackFromServer.getAddress(), ackFromServer.getPort());
+       // SocketAddress remoteBindPoint = new InetSocketAddress(ackFromServer.getAddress(), ackFromServer.getPort());
 
         // Force some re-transmissions from the server
         System.out.println(readPacketContents(receiveNextPacket(socket)));
-        System.out.println(readPacketContents(receiveNextPacket(socket)));
-        System.out.println(readPacketContents(receiveNextPacket(socket)));
+       // System.out.println(readPacketContents(receiveNextPacket(socket)));
+       // System.out.println(readPacketContents(receiveNextPacket(socket)));
 
         // Now we send an error-message, just because we can.
-        sendErrorPacket(socket, remoteBindPoint, ERR_NOT_DEFINED, "keke");
+        //sendErrorPacket(socket, remoteBindPoint, ERR_NOT_DEFINED, "keke");
 
         // Shouldn't get anything back from the server after this.
-        System.out.println(readPacketContents(receiveNextPacket(socket)));
+       // System.out.println(readPacketContents(receiveNextPacket(socket)));
 
         /*
         Examples of methods-usage below:

@@ -3,7 +3,6 @@ import javax.naming.SizeLimitExceededException;
 import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
-import java.nio.channels.ConnectionPendingException;
 import java.nio.file.*;
 import java.util.zip.DataFormatException;
 
@@ -42,7 +41,7 @@ public class TFTPServer
     private static final int ERR_NO_SUCH_USER = 7;
 
     // Corresponding error messages to the error codes above
-    public static final String[] ERROR_MESSAGES = {"", "File not found.", "Access violation.", "Disk full or allocation exceeded.",
+    private static final String[] ERROR_MESSAGES = {"", "File not found.", "Access violation.", "Disk full or allocation exceeded.",
             "Illegal TFTP operation.", "Unknown transfer ID.", "File already exists.", "No such user."};
 
     // Constants related to size limit for write folder
@@ -435,7 +434,7 @@ public class TFTPServer
 
         byte[] fileBuf = new byte[512], //temporary storage for the file bytes
                 file, //full file bytes
-                packet = null, //packet array
+                packet, //packet array
                 temp, //temporary array, used for increasing the size of fileBuf
                 ACK = new byte[4]; //ACKnowledgement array
         short currentBN = 0, //block number of the last received packet
@@ -684,10 +683,7 @@ public class TFTPServer
         buf[3] = (byte) errorCode;
 
         // Copy message contents to buffer
-        for (int i = 0; i < mess.length; i++)
-        {
-            buf[4+i] = mess[i];
-        }
+        System.arraycopy(mess, 0, buf, 4, mess.length);
 
         // Set terminating byte in the end
         buf[buf.length -1] = 0;
@@ -732,18 +728,14 @@ public class TFTPServer
         long directorySize = 0;
 
         // traverse through dir structure
-        for (int i=0; i < filesinDir.length; i++)
-        {
-            File currentFile = filesinDir[i];
-
-            if (currentFile.isFile())
-            {
-                directorySize += currentFile.length();
-            }
-            else
-            {
-                // Recursive call for subdirectories
-                directorySize += getFolderSize(currentFile.getPath());
+        if (filesinDir != null) {
+            for (File currentFile : filesinDir) {
+                if (currentFile.isFile()) {
+                    directorySize += currentFile.length();
+                } else {
+                    // Recursive call for subdirectories
+                    directorySize += getFolderSize(currentFile.getPath());
+                }
             }
         }
         return directorySize;
