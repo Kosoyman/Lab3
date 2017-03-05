@@ -3,6 +3,7 @@ import javax.naming.SizeLimitExceededException;
 import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
+import java.nio.channels.ConnectionPendingException;
 import java.nio.file.*;
 import java.util.zip.DataFormatException;
 
@@ -317,6 +318,12 @@ public class TFTPServer
                             System.out.println("INCORRECT ACK NUMBER RECEIVED.");
                         }
                     }
+                    // In case of error-packet from client, we stop transmitting immediately. In all other cases, we try
+                    // Retransmission
+                    catch (InterruptedException e)
+                    {
+                        throw new InterruptedException(e.getMessage());
+                    }
                     catch (Exception e)
                     {
                         // In case of any problems with receiving ACK, print exception message for debugging purposes
@@ -354,8 +361,15 @@ public class TFTPServer
 
             }
         }
+        catch (InterruptedException e)
+        {
+            // In case of error-packet received from client in the middle of the transfer
+            System.out.println(e.getMessage());
+            return false;
+        }
         catch (NoSuchFileException e)
         {
+            System.out.println("File not found on server!");
             send_ERR(socket, ERR_FILE_NOT_FOUND);
             return false;
         }
@@ -371,8 +385,9 @@ public class TFTPServer
      * @param socket socket used for client communication
      * @return blocknumber
      * @throws IOException in case of incorrect package type, package timeout or IO-error
+     * @throws InterruptedException if the packet is an error-message
      */
-    private short receive_ACK(DatagramSocket socket) throws IOException {
+    private short receive_ACK(DatagramSocket socket) throws IOException, InterruptedException {
 
         byte[] ACKbuf = new byte[4]; //ACK packet is 4 bytes long (RFC1350)
         DatagramPacket receivePacket = new DatagramPacket(ACKbuf, ACKbuf.length);
@@ -390,6 +405,10 @@ public class TFTPServer
 
             if(opcode == OP_ACK) {
                 return blockNumber;
+            }
+            else if (opcode == OP_ERR)
+            {
+                throw new InterruptedException("ERROR-MESSAGE RECEIVED FROM CLIENT, CLOSING CONNECTION.");
             }
             else
             {
@@ -483,10 +502,10 @@ public class TFTPServer
                             //process received packet
                             packet = receivePacket.getData();
                             ByteBuffer wrap= ByteBuffer.wrap(packet);
-                            wrap.getShort(); //the first short is opcode, right now is just skipped over
+                            short opCode = wrap.getShort();
                             incomingBN = wrap.getShort();
 
-                            if (incomingBN == currentBN + 1) { //check if the bn is ok and that the packet is not empty
+                            if (opCode == OP_DAT && incomingBN == currentBN + 1) { //check if the bn is ok and that the packet is not empty
                                 currentBN = incomingBN;
 
                                 //copy the contents of the packet into fileBuf
@@ -516,8 +535,14 @@ public class TFTPServer
                             }
                             else
                             {
+                                // If the packet is an error-message, we stop executing. Other packet-types are simply discarded
+                                if (opCode == OP_ERR)
+                                {
+                                    //System.err.println("ERROR IN THE MIDDLE OF THE TRANSFER");
+                                    throw new InterruptedException("Client sent an error-packet in the middle of transmission, closing connection.");
+                                }
                                 reTransmitCounter++;
-                                System.out.println("Incorrect Data-block received, resending ACK.");
+                                System.out.println("Incorrect Data-block (or wrong packet type) received, resending ACK.");
                             }
                         }
                         catch (SocketTimeoutException e)
@@ -574,6 +599,12 @@ public class TFTPServer
             fos.write(file);
             fos.close();
 
+        }
+        catch (InterruptedException e)
+        {
+            // Debug
+            System.out.println(e.getMessage());
+            return false;
         }
         catch (DataFormatException e)
         {

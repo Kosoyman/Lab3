@@ -13,6 +13,7 @@ public class RogueClient
     private static final String REMOTE_IP = "localhost";
     private static final int REMOTE_PORT = 4970;
     private static final int CONNECTION_TIMEOUT = 10 * 1000;
+    private static SocketAddress REMOTE_BIND_PORT_INITIAL = new InetSocketAddress(REMOTE_IP, REMOTE_PORT);
 
     private static final String TEST_FILE = "kappa.png";
     private static final String TEST_MODE = "octet";
@@ -43,10 +44,10 @@ public class RogueClient
 
     public static void main(String[] args) throws IOException {
 
+        // Socket setup
         DatagramSocket socket = new DatagramSocket(null);
         SocketAddress localBindPoint = new InetSocketAddress(CLIENT_PORT);
         socket.bind(localBindPoint);
-
         socket.setSoTimeout(CONNECTION_TIMEOUT);
 
         /*
@@ -54,59 +55,94 @@ public class RogueClient
 
             Easy as one-two-three.
             1. Send a packet, using one of the methods where the name begins with "send"
-            2. Grab the server reply with the receiveServerResponse (String)
-            3. (Print out the server reply if you want)
+            2. Grab the server reply with the receiveNextPacket-method
+            3. Print out the server reply using the readPacketContents-method
 
          */
 
-        //sendIllegalOpCodeRequest(socket, ILLEGAL_OP_CODE);
+        // Initial connection on static server port
 
-        //sendDataPacket(socket);
+        //sendWriteRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa2.png");
+        sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
+        DatagramPacket ackFromServer = receiveNextPacket(socket);
 
-        //sendACKPacket(socket, 1);
+        // Create a new bind port for the established connection (New port number)
+        SocketAddress remoteBindPoint = new InetSocketAddress(ackFromServer.getAddress(), ackFromServer.getPort());
 
-        //sendErrorPacket(socket, ERR_ACCESS_VIOLATION, ERROR_MESSAGES[ERR_ACCESS_VIOLATION]);
+        // Force some re-transmissions from the server
+        System.out.println(readPacketContents(receiveNextPacket(socket)));
+        System.out.println(readPacketContents(receiveNextPacket(socket)));
+        System.out.println(readPacketContents(receiveNextPacket(socket)));
 
-        //sendReadRequest(socket, "kappa2.png");
+        // Now we send an error-message, just because we can.
+        sendErrorPacket(socket, remoteBindPoint, ERR_NOT_DEFINED, "keke");
 
-        sendWriteRequest(socket, "kappa2.png");
+        // Shouldn't get anything back from the server after this.
+        System.out.println(readPacketContents(receiveNextPacket(socket)));
 
-        try
-        {
-            System.out.println("Message received from server: ");
+        /*
+        Examples of methods-usage below:
 
-            // Using loop here for testing the retransmissions from
-            // the server and that we get an error-message at the end.
-            for (int i=0; i < 12; i++)
-            {
-                System.out.println(receiveServerResponse(socket));
-            }
-
-        }
-        catch (SocketTimeoutException e)
-        {
-            System.out.println("No reply from server within reasonable time, closing connection");
-        }
+        sendWriteRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa2.png");
+        sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
+        sendACKPacket(socket, remoteBindPoint, 10);
+        sendErrorPacket(socket, remoteBindPoint, 0, "keke");
+        sendDataPacket(socket, remoteBindPoint, "lol");
+        sendIllegalOpCodeRequest(socket, remoteBindPoint, ILLEGAL_OP_CODE);
+        */
 
     }
 
     /**
-     * Grabs the next packet available and returns the packet contents as a string
+     *
      * @param socket
      * @return
      * @throws IOException
      */
-    private static String receiveServerResponse(DatagramSocket socket) throws IOException
-    {
+    private static DatagramPacket receiveNextPacket(DatagramSocket socket) throws IOException {
+
         byte[] buf = new byte[516];
         DatagramPacket receivePacket = new DatagramPacket(buf, buf.length);
-        socket.receive(receivePacket);
+
+        try
+        {
+            socket.receive(receivePacket);
+        }
+        catch (SocketTimeoutException e)
+        {
+            System.out.println("No reply from server within reasonable time, closing connection");
+            return null;
+        }
+
+        return receivePacket;
+    }
+
+    /**
+     * Grabs the next packet available and returns the packet contents as a string
+     * @param packet
+     * @return packet contents, empty string if packet is null.
+     * @throws IOException
+     */
+    private static String readPacketContents(DatagramPacket packet) throws IOException
+    {
+        if (packet == null)
+        {
+            return "";
+        }
+
+        /*
+        byte[] buf = new byte[516];
+        DatagramPacket packet = new DatagramPacket(buf, buf.length);
+        socket.receive(packet);
+        */
+
+        byte[] buf = packet.getData();
 
         // Grab Op-code and block/error code
         String message = "" + buf[0] + buf[1] + buf[2] + buf[3];
 
         // Grab rest of contents, if any
-        message += new String(buf, 4, receivePacket.getLength() - 4, "US-ASCII");
+        message += new String(buf, 4, packet.getLength() - 4, "US-ASCII");
 
         return message;
     }
@@ -118,7 +154,7 @@ public class RogueClient
      * @param message
      * @throws IOException
      */
-    private static void sendErrorPacket(DatagramSocket socket, int errorCode, String message) throws IOException
+    private static void sendErrorPacket(DatagramSocket socket, SocketAddress remoteBindPoint, int errorCode, String message) throws IOException
     {
         byte[] messageData = message.getBytes();
 
@@ -142,7 +178,6 @@ public class RogueClient
 
         buf[indexPointer] = 0;
 
-        SocketAddress remoteBindPoint = new InetSocketAddress(REMOTE_IP, REMOTE_PORT);
         DatagramPacket sendPacket = new DatagramPacket(buf, buf.length, remoteBindPoint);
 
         // debug
@@ -157,7 +192,7 @@ public class RogueClient
      * @param blockNumber block number
      * @throws IOException
      */
-    private static void sendACKPacket(DatagramSocket socket, int blockNumber) throws IOException {
+    private static void sendACKPacket(DatagramSocket socket, SocketAddress remoteBindPoint, int blockNumber) throws IOException {
 
         byte[] buf = new byte[4];
 
@@ -169,7 +204,6 @@ public class RogueClient
         buf[2] = 0;
         buf[3] = (byte) blockNumber;
 
-        SocketAddress remoteBindPoint = new InetSocketAddress(REMOTE_IP, REMOTE_PORT);
         DatagramPacket sendPacket = new DatagramPacket(buf, buf.length, remoteBindPoint);
 
         // debug
@@ -184,9 +218,9 @@ public class RogueClient
      * @param socket
      * @throws IOException
      */
-    private static void sendDataPacket(DatagramSocket socket) throws IOException
+    private static void sendDataPacket(DatagramSocket socket, SocketAddress remoteBindPoint, String data) throws IOException
     {
-        byte[] testData = "Keke".getBytes();
+        byte[] testData = data.getBytes();
 
         byte[] buf = new byte[4 + testData.length];
 
@@ -206,11 +240,7 @@ public class RogueClient
             buf[indexPointer++] = testData[i];
         }
 
-        SocketAddress remoteBindPoint = new InetSocketAddress(REMOTE_IP, REMOTE_PORT);
         DatagramPacket sendPacket = new DatagramPacket(buf, buf.length, remoteBindPoint);
-
-        // debug
-        //System.out.println("Packet contents: " + buf[0] + buf[1] + buf[2] + buf[3] + new String(buf, 4, testData.length, "US-ASCII"));
 
         socket.send(sendPacket);
     }
@@ -220,9 +250,9 @@ public class RogueClient
      * @param socket
      * @param fileName
      */
-    private static void sendWriteRequest(DatagramSocket socket, String fileName) throws IOException
+    private static void sendWriteRequest(DatagramSocket socket, SocketAddress remoteBindPoint, String fileName) throws IOException
     {
-        sendRequestPacket(socket, OP_WRQ, fileName, TEST_MODE);
+        sendRequestPacket(socket, remoteBindPoint, OP_WRQ, fileName, TEST_MODE);
     }
 
     /**
@@ -231,9 +261,9 @@ public class RogueClient
      * @param fileName
      * @throws IOException
      */
-    private static void sendReadRequest(DatagramSocket socket, String fileName) throws IOException
+    private static void sendReadRequest(DatagramSocket socket, SocketAddress remoteBindPoint, String fileName) throws IOException
     {
-        sendRequestPacket(socket, OP_RRQ, fileName, TEST_MODE);
+        sendRequestPacket(socket, remoteBindPoint, OP_RRQ, fileName, TEST_MODE);
     }
 
     /**
@@ -241,9 +271,9 @@ public class RogueClient
      * @param socket
      * @throws IOException
      */
-    private static void sendIllegalOpCodeRequest(DatagramSocket socket, int opCode) throws IOException
+    private static void sendIllegalOpCodeRequest(DatagramSocket socket, SocketAddress remoteBindPoint, int opCode) throws IOException
     {
-        sendRequestPacket(socket, opCode, TEST_FILE, TEST_MODE);
+        sendRequestPacket(socket, remoteBindPoint, opCode, TEST_FILE, TEST_MODE);
     }
 
     /**
@@ -254,7 +284,7 @@ public class RogueClient
      * @param mode
      * @throws IOException
      */
-    private static void sendRequestPacket(DatagramSocket socket, int opcode, String filename, String mode) throws IOException {
+    private static void sendRequestPacket(DatagramSocket socket, SocketAddress remoteBindPoint, int opcode, String filename, String mode) throws IOException {
 
         byte[] buf = new byte[4 + filename.getBytes().length + mode.getBytes().length];
 
@@ -284,10 +314,6 @@ public class RogueClient
 
         buf[indexPointer] = 0;
 
-        // Debug (will include the terminating zeroes in the string, but they are not visible)
-        //System.out.println("Packet contents: " + buf[0] + buf[1] + new String(buf, 2, buf.length - 2, "US-ASCII"));
-
-        SocketAddress remoteBindPoint = new InetSocketAddress(REMOTE_IP, REMOTE_PORT);
         DatagramPacket sendPacket = new DatagramPacket(buf, buf.length, remoteBindPoint);
 
         socket.send(sendPacket);
