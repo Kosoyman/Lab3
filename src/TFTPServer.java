@@ -162,9 +162,7 @@ public class TFTPServer
         }
         // Get client address and port from the packet
 
-        int port = dp.getPort();
-
-        return new InetSocketAddress(dp.getAddress(), port);
+        return new InetSocketAddress(dp.getAddress(), dp.getPort());
     }
 
     /**
@@ -287,7 +285,6 @@ public class TFTPServer
 
                 //copy as much as possible from file into the packet
                 for (packetPointer = 4; packetPointer < packet.length; packetPointer++) {
-
                     packet[packetPointer] = file[filePointer];
                     filePointer++;
                 }
