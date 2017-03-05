@@ -4,6 +4,7 @@ import java.net.*;
 /**
  * Class that can be used to diagnose replies/error messages from a TFTP-server and test it's overall stability
  * See instructions down in the main-method
+ * @author Peter Danielsson, pd222dj@student.lnu.se
  */
 public class RogueClient
 {
@@ -11,6 +12,7 @@ public class RogueClient
     private static final int CLIENT_PORT = 0;
     private static final String REMOTE_IP = "localhost";
     private static final int REMOTE_PORT = 4970;
+    private static final int CONNECTION_TIMEOUT = 10 * 1000;
 
     private static final String TEST_FILE = "kappa.png";
     private static final String TEST_MODE = "octet";
@@ -45,6 +47,7 @@ public class RogueClient
         SocketAddress localBindPoint = new InetSocketAddress(CLIENT_PORT);
         socket.bind(localBindPoint);
 
+        socket.setSoTimeout(CONNECTION_TIMEOUT);
 
         /*
             _INSTRUCTIONS_
@@ -68,8 +71,22 @@ public class RogueClient
 
         sendWriteRequest(socket, "kappa2.png");
 
-        System.out.println("Message received from server: ");
-        System.out.println(receiveServerResponse(socket));
+        try
+        {
+            System.out.println("Message received from server: ");
+
+            // Using loop here for testing the retransmissions from
+            // the server and that we get an error-message at the end.
+            for (int i=0; i < 12; i++)
+            {
+                System.out.println(receiveServerResponse(socket));
+            }
+
+        }
+        catch (SocketTimeoutException e)
+        {
+            System.out.println("No reply from server within reasonable time, closing connection");
+        }
 
     }
 
@@ -124,8 +141,6 @@ public class RogueClient
         }
 
         buf[indexPointer] = 0;
-
-        System.out.println("indexpointer is on last element:" + (indexPointer == (buf.length -1)));
 
         SocketAddress remoteBindPoint = new InetSocketAddress(REMOTE_IP, REMOTE_PORT);
         DatagramPacket sendPacket = new DatagramPacket(buf, buf.length, remoteBindPoint);

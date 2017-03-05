@@ -1,18 +1,23 @@
 import com.sun.media.sound.InvalidDataException;
-
 import javax.naming.SizeLimitExceededException;
 import java.io.*;
 import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.file.*;
-import java.util.Arrays;
+import java.util.zip.DataFormatException;
+
+/**
+ *  A simple multi-threaded TFTPServer that supports file-transfers in octet mode
+ *  @author Maxim Kravchenko, mk223hm@student.lnu.se
+ *  @author Peter Danielsson, pd222dj@student.lnu.se
+ */
 
 public class TFTPServer
 {
     private static final int TFTPPORT = 4970;
     private static final int BUFSIZE = 516;
     private static final String READDIR = "TFTP/read/";
-    private static final String WRITEDIR = "TFTP/write/"; //custom address at your PC
+    private static final String WRITEDIR = "TFTP/write/";
 
     // OP codes
     private static final int OP_RRQ = 1;
@@ -83,6 +88,8 @@ public class TFTPServer
             if (clientAddress == null)
                 continue;
 
+            System.out.printf("\n***** Request from %s using port %d *****\n", clientAddress.getHostName(), clientAddress.getPort());
+
             final StringBuffer requestedFile= new StringBuffer();
             final int reqtype = ParseRQ(buf, requestedFile);
 
@@ -96,11 +103,7 @@ public class TFTPServer
 
                         // Connect to client
                         sendSocket.connect(clientAddress);
-/*
-						System.out.printf("%s request for %s from %s using port %d\n",
-								(reqtype == OP_RRQ)?"Read":"Write",
-								clientAddress.getHostName(), clientAddress.getPort());
-*/
+
                         // Read request
                         if (reqtype == OP_RRQ)
                         {
@@ -114,7 +117,18 @@ public class TFTPServer
                             requestedFile.insert(0, WRITEDIR);
                             HandleRQ(sendSocket,requestedFile.toString(),OP_WRQ);
                         }
-                        // Unsupported request
+                        // In case of Data or ACK received on a non-established connection
+                        else if (reqtype == OP_ACK || reqtype == OP_DAT)
+                        {
+                            send_ERR(sendSocket, ERR_UNKNOWN_TRANSFER_ID);
+                        }
+                        // In case of error message, we don't send anything back.
+                        else if (reqtype == OP_ERR)
+                        {
+                            // Debug
+                            System.out.println("Error-package received from client with non-established connection. Discarding packet and connection.");
+                        }
+                        // For all other requests, consider them as illegal
                         else
                         {
                             send_ERR(sendSocket, ERR_ILLEGAL_OPERATION);
@@ -203,7 +217,6 @@ public class TFTPServer
      * @param requestedFile (name of file to read/write)
      * @param opcode (RRQ or WRQ)
      */
-
     private void HandleRQ(DatagramSocket sendSocket, String requestedFile, int opcode)
     {
         if(opcode == OP_RRQ)
@@ -228,7 +241,10 @@ public class TFTPServer
     }
 
     /**
-     To be implemented
+     * Received data from client and sends ACK-packets back.
+     * @param socket socket used for client communication
+     * @param requestedFile filename for specific file
+     * @return true if file is received succesfully, false otherwise
      */
     private boolean send_DATA_receive_ACK(DatagramSocket socket, String requestedFile)
     {
@@ -398,8 +414,6 @@ public class TFTPServer
      */
     private boolean receive_DATA_send_ACK(DatagramSocket socket, String requestedFile){
 
-
-
         byte[] fileBuf = new byte[512], //temporary storage for the file bytes
                 file, //full file bytes
                 packet = null, //packet array
@@ -442,71 +456,111 @@ public class TFTPServer
 
             }
 
-            socket.send(ackPacket); //send ACK packet
+            boolean transmissionComplete = false;
+            boolean done = false;
 
-            do {
+            // Keep receiving and sending ACKs until we are done or until connection problems
+            while (!done && !transmissionComplete)
+            {
                 try {
 
-                    //receive packet
-                    packet = new byte[516]; //reset the packet array
-                    receivePacket = new DatagramPacket(packet, packet.length);
-                    socket.setSoTimeout(WAITING_LIMIT); //set timeout
-                    socket.receive(receivePacket);
+                    boolean correctDataBlock = false;
+                    int reTransmitCounter = 0;
 
-                    //process received packet
-                    packet = receivePacket.getData();
-                    ByteBuffer wrap= ByteBuffer.wrap(packet);
-                    wrap.getShort(); //the first short is opcode, right now is just skipped over
-                    incomingBN = wrap.getShort();
+                    // Keep going until correct datablock has been received or we run out of retransmission retries
+                    while (!correctDataBlock && reTransmitCounter <= MAXIMUM_RETRIES)
+                    {
+                        try
+                        {
+                            socket.send(ackPacket); //send ACK packet
 
-                    if (incomingBN == currentBN + 1) { //check if the bn is ok and that the packet is not empty
-                        currentBN = incomingBN;
+                            //receive packet
+                            packet = new byte[516]; //reset the packet array
+                            receivePacket = new DatagramPacket(packet, packet.length);
+                            socket.setSoTimeout(WAITING_LIMIT); //set timeout
+                            socket.receive(receivePacket);
 
-                        // Counter to check data-size
-                        int packetDataSizeCounter = 0;
+                            //process received packet
+                            packet = receivePacket.getData();
+                            ByteBuffer wrap= ByteBuffer.wrap(packet);
+                            wrap.getShort(); //the first short is opcode, right now is just skipped over
+                            incomingBN = wrap.getShort();
 
-                        //copy the contents of the packet into fileBuf
-                        for (int i = 4; i < packet.length; i++) {
-                            fileBuf[totalBytes] = packet[i];
-                            totalBytes++;
+                            if (incomingBN == currentBN + 1) { //check if the bn is ok and that the packet is not empty
+                                currentBN = incomingBN;
+
+                                //copy the contents of the packet into fileBuf
+                                for (int i = 4; i < receivePacket.getLength(); i++) {
+                                    fileBuf[totalBytes] = packet[i];
+                                    totalBytes++;
+                                }
+
+                                //increase the size of filBuf by 512, so next packet data will fit
+                                temp = new byte[fileBuf.length];
+                                System.arraycopy(fileBuf, 0, temp, 0, fileBuf.length);
+                                fileBuf = new byte[totalBytes + 512];
+                                System.arraycopy(temp, 0, fileBuf, 0, totalBytes);
+
+                                //set opcode
+                                ACK[0] = 0;
+                                ACK[1] = OP_ACK;
+
+                                //set block number
+                                ACK[2] = (byte) ((currentBN >> 8) & 0xff);
+                                ACK[3] = (byte) (currentBN & 0xff);
+
+                                // Create ACK-packet
+                                ackPacket = new DatagramPacket(ACK, ACK.length, socket.getInetAddress(), socket.getPort());
+
+                                correctDataBlock = true;
+                            }
+                            else
+                            {
+                                reTransmitCounter++;
+                                System.out.println("Incorrect Data-block received, resending ACK.");
+                            }
                         }
-
-                        //increase the size of filBuf by 512, so next packet data will fit
-                        temp = new byte[fileBuf.length];
-                        System.arraycopy(fileBuf, 0, temp, 0, fileBuf.length);
-                        fileBuf = new byte[totalBytes + 512];
-                        System.arraycopy(temp, 0, fileBuf, 0, totalBytes);
+                        catch (SocketTimeoutException e)
+                        {
+                            reTransmitCounter++;
+                            if(reTransmitCounter <= MAXIMUM_RETRIES)
+                            {
+                                System.out.println("No new DATA-packet received, resending ACK.");
+                            }
+                        }
 
                     }
 
-                    //set opcode
-                    ACK[0] = 0;
-                    ACK[1] = OP_ACK;
+                    // If we never got the correct data block, it means we ran out of retries.
+                    if (!correctDataBlock)
+                    {
+                        done = true;
+                    }
+                    // Check if received packet was the last one.
+                    else if (receivePacket.getLength() < 516)
+                    {
+                        // No dallying atm
+                        // Make sure we have enough space left in write-folder before sending final ACK.
+                        if (!hasEnoughSpace(totalBytes))
+                        {
+                            throw new SizeLimitExceededException("Not enough disk space for storing file!");
+                        }
 
-                    //set block number
-                    ACK[2] = (byte) ((currentBN >> 8) & 0xff);
-                    ACK[3] = (byte) (currentBN & 0xff);
+                        socket.send(ackPacket); //send ACK packet
+                        transmissionComplete = true;
+                    }
 
-                    //send ACK
-                    ackPacket = new DatagramPacket(ACK, ACK.length, socket.getInetAddress(), socket.getPort());
-                    socket.send(ackPacket);
-
-
-                    //right now happens 100% of the time
-                } catch (SocketTimeoutException e) {
-                    System.out.printf("The client stopped sending\n");
-                } catch (IOException e) {
-                    e.printStackTrace();
+                }
+                catch (IOException e) {
+                    System.out.println("Connection problems, aborting.");
                     return false;
                 }
+            }
 
-            } while (receivePacket.getLength() == 516);
-
-
-            // Make sure we have enough space left in write-folder
-            if (!hasEnoughSpace(totalBytes))
+            // If we never received all the data from the client, we stop executing.
+            if (!transmissionComplete)
             {
-                throw new SizeLimitExceededException("Not enough disk space for storing file!");
+                throw new DataFormatException("Maximum number of retransmission reached. Aborting.");
             }
 
             //save file
@@ -520,6 +574,13 @@ public class TFTPServer
             fos.write(file);
             fos.close();
 
+        }
+        catch (DataFormatException e)
+        {
+            // Debug
+            System.out.println(e.getMessage());
+            send_ERR(socket, ERR_NOT_DEFINED, "Retransmission limit exceeded, closing connection.");
+            return false;
         }
         catch (SizeLimitExceededException e)
         {
@@ -546,7 +607,12 @@ public class TFTPServer
             return false;
         }
         catch (IOException e) {
+
             e.printStackTrace();
+
+            // Sending "No such user"-error, as described in Assignment questions.
+            // https://mymoodle.lnu.se/mod/forum/discuss.php?d=917218
+            send_ERR(socket, ERR_NO_SUCH_USER);
             return false;
         }
 
@@ -617,14 +683,6 @@ public class TFTPServer
      */
     private boolean hasEnoughSpace(long fileSize) throws IOException
     {
-        /* Debug
-        System.out.println("Size limit: " + WRITE_FOLDER_SIZE_LIMIT);
-        System.out.println("Current folder size: " + getFolderSize(WRITEDIR));
-        System.out.println("File Size: " + fileSize);
-
-        System.out.println("New size for folder will be: " + (getFolderSize(WRITEDIR) + fileSize));
-        */
-
         return (getFolderSize(WRITEDIR) + fileSize) <= WRITE_FOLDER_SIZE_LIMIT;
     }
 
