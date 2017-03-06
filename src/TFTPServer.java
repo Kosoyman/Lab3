@@ -259,17 +259,24 @@ public class TFTPServer
                     packet,
                     block = new byte[2];
             DatagramPacket sendPacket;
-
             ByteBuffer wrap= ByteBuffer.wrap(block);
             short blockNumber = wrap.getShort();
 
-            while (filePointer < file.length -1) {
+            //if the last portion of data is exactly 512 bytes, we will need to send an empty packet to ensure  proper connection termination
+            boolean needEmpty = false;
+            while (filePointer < file.length || needEmpty) {
 
                 bytesLeft = file.length - filePointer;
 
                 //check if the package is the final one
                 if(bytesLeft < 512)
                     packet = new byte[bytesLeft + 4]; //+4 for the header
+
+                //check if the packet is the final one AND it's exactly 512 bytes ling
+                else if (bytesLeft == 512){
+                    packet = new byte[516];
+                    needEmpty = true;
+                }
 
                 else
                     packet = new byte [516]; //otherwise set size to max
@@ -284,10 +291,15 @@ public class TFTPServer
                 packet[3] = (byte)(blockNumber & 0xff);
 
                 //copy as much as possible from file into the packet
-                for (packetPointer = 4; packetPointer < packet.length; packetPointer++) {
-                    packet[packetPointer] = file[filePointer];
-                    filePointer++;
+                if (filePointer < file.length) {
+                    for (packetPointer = 4; packetPointer < packet.length; packetPointer++) {
+                        packet[packetPointer] = file[filePointer];
+                        filePointer++;
+                    }
                 }
+                //if this packet must be empty, disable the flag so we don't get stuck in infinite loop
+                else
+                    needEmpty = false;
 
                 sendPacket = new DatagramPacket(packet, packet.length, ip, port);
                 socket.send(sendPacket); //send
