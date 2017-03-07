@@ -120,6 +120,7 @@ public class TFTPServer
                         // In case of Data or ACK received on a non-established connection
                         else if (reqtype == OP_ACK || reqtype == OP_DAT)
                         {
+                            System.out.println("Unknown transfer ID. Sending an error packet.");
                             send_ERR(sendSocket, ERR_UNKNOWN_TRANSFER_ID);
                         }
                         // In case of error message, we don't send anything back.
