@@ -132,6 +132,7 @@ public class TFTPServer
                         // For all other requests, consider them as illegal
                         else
                         {
+                            System.out.println("Invalid request from client. Sending an error packet.");
                             send_ERR(sendSocket, ERR_ILLEGAL_OPERATION);
                         }
 
@@ -230,13 +231,6 @@ public class TFTPServer
             boolean result = receive_DATA_send_ACK(sendSocket, requestedFile);
             System.out.println("RECEIVED SUCCESSFULLY: " + result);
         }
-
-		else
-		{
-			System.err.println("Invalid request from client. Sending an error packet.");
-			// See "TFTP Formats" in TFTP specification for the ERROR packet contents
-			send_ERR(sendSocket, ERR_ILLEGAL_OPERATION);
-		}
     }
 
     /**
