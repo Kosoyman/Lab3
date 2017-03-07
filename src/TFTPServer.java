@@ -126,7 +126,8 @@ public class TFTPServer
                         else if (reqtype == OP_ERR)
                         {
                             // Debug
-                            System.out.println("Error-package received from client with non-established connection. Discarding packet and connection.");
+                            System.out.println("Error-package received from client with non-established connection. " +
+                                    "Discarding packet and connection.");
                         }
                         // For all other requests, consider them as illegal
                         else

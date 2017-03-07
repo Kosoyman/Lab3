@@ -63,7 +63,7 @@ public class RogueClient
         // Initial connection on static server port
 
         //sendWriteRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa2.png");
-        //sendIllegalOpCodeRequest(socket, REMOTE_BIND_PORT_INITIAL, ILLEGAL_OP_CODE);
+        sendIllegalOpCodeRequest(socket, REMOTE_BIND_PORT_INITIAL, ILLEGAL_OP_CODE);
         //sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
         //DatagramPacket ackFromServer = receiveNextPacket(socket);
         sendDataPacket(socket, REMOTE_BIND_PORT_INITIAL, "lol");
