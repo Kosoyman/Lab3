@@ -58,40 +58,40 @@ public class RogueClient
             2. Grab the server reply with the receiveNextPacket-method
             3. Print out the server reply using the readPacketContents-method
 
+            In case of sending messages to an established connection, grab the ip and port from the first server reply
+            and use this information to create a SocketAddress that you then use for sending the rest of the packages.
+
+
+            __Examples__
+
+            1. Send a read request and then an error back to the established connection___
+
+            sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
+            DatagramPacket dataFromServer = receiveNextPacket(socket);
+
+            // Create a new bind port for the established connection (New port number)
+            SocketAddress remoteBindPoint = new InetSocketAddress(dataFromServer.getAddress(), dataFromServer.getPort());
+            sendErrorPacket(socket, remoteBindPoint, ERR_NOT_DEFINED, "Terminate!");
+
+            2. Examples of method calls
+
+            sendWriteRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa2.png");
+            sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
+            sendACKPacket(socket, remoteBindPoint, 10);
+            sendErrorPacket(socket, remoteBindPoint, 0, "keke");
+            sendDataPacket(socket, remoteBindPoint, "lol");
+            sendIllegalOpCodeRequest(socket, remoteBindPoint, ILLEGAL_OP_CODE);
+
          */
 
         // Initial connection on static server port
-
-        //sendWriteRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa2.png");
-        //sendIllegalOpCodeRequest(socket, REMOTE_BIND_PORT_INITIAL, ILLEGAL_OP_CODE);
-        //sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
-        //DatagramPacket ackFromServer = receiveNextPacket(socket);
-        sendDataPacket(socket, REMOTE_BIND_PORT_INITIAL, "lol");
-        // Create a new bind port for the established connection (New port number)
-       // SocketAddress remoteBindPoint = new InetSocketAddress(ackFromServer.getAddress(), ackFromServer.getPort());
-
-        // Force some re-transmissions from the server
-        System.out.println(readPacketContents(receiveNextPacket(socket)));
-       // System.out.println(readPacketContents(receiveNextPacket(socket)));
-       // System.out.println(readPacketContents(receiveNextPacket(socket)));
-
-        // Now we send an error-message, just because we can.
-        //sendErrorPacket(socket, REMOTE_BIND_PORT_INITIAL, ERR_NOT_DEFINED, "keke");
-
-        // Shouldn't get anything back from the server after this.
-       // System.out.println(readPacketContents(receiveNextPacket(socket)));
-
-        /*
-        Examples of methods-usage below:
-
-        sendWriteRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa2.png");
         sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
-        sendACKPacket(socket, remoteBindPoint, 10);
-        sendErrorPacket(socket, remoteBindPoint, 0, "keke");
-        sendDataPacket(socket, remoteBindPoint, "lol");
-        sendIllegalOpCodeRequest(socket, remoteBindPoint, ILLEGAL_OP_CODE);
-        */
+        DatagramPacket dataFromServer = receiveNextPacket(socket);
+        System.out.println("Server response: " + readPacketContents(dataFromServer));
 
+        // Create a new bind port for the established connection (New port number)
+        SocketAddress remoteBindPoint = new InetSocketAddress(dataFromServer.getAddress(), dataFromServer.getPort());
+        sendErrorPacket(socket, remoteBindPoint, ERR_NOT_DEFINED, "Terminate!");
     }
 
     /**
