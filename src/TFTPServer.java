@@ -91,7 +91,8 @@ public class TFTPServer
             System.out.printf("\n***** Request from %s using port %d *****\n", clientAddress.getHostName(), clientAddress.getPort());
 
             final StringBuffer requestedFile= new StringBuffer();
-            final int reqtype = ParseRQ(buf, requestedFile);
+            StringBuffer mode = new StringBuffer(); //used for storing mode of the current request
+            final int reqtype = ParseRQ(buf, requestedFile, mode);
 
             new Thread()
             {
@@ -104,8 +105,14 @@ public class TFTPServer
                         // Connect to client
                         sendSocket.connect(clientAddress);
 
+                        //check if mode is ok
+                        if (!mode.toString().equals("octet"))
+                        {
+                            System.out.println("Invalid mode of operation. Sending an error packet.");
+                            send_ERR(sendSocket, ERR_NOT_DEFINED, "Invalid mode of operation. The only supported mode is octet.");
+                        }
                         // Read request
-                        if (reqtype == OP_RRQ)
+                        else if (reqtype == OP_RRQ)
                         {
                             requestedFile.insert(0, READDIR);
                             HandleRQ(sendSocket, requestedFile.toString(), OP_RRQ);
@@ -175,7 +182,7 @@ public class TFTPServer
      * @param requestedFile (name of file to read/write)
      * @return opcode (request type: RRQ or WRQ)
      */
-    private int ParseRQ(byte[] buf, StringBuffer requestedFile)
+    private int ParseRQ(byte[] buf, StringBuffer requestedFile, StringBuffer mode)
     {
         // See "TFTP Formats" in TFTP specification for the RRQ/WRQ request contents
 
@@ -204,7 +211,7 @@ public class TFTPServer
             readBytes ++;
 
         //readBytes - offset give length of the mode; saving the mode in lower case for convenience
-        String mode = new String(buf, offset, readBytes - offset).toLowerCase();
+        mode.append(new String(buf, offset, readBytes - offset).toLowerCase());
         System.out.println("OPCODE: " + opcode);
         System.out.println("FILENAME: " + fileName);
         System.out.println("MODE: " + mode);
