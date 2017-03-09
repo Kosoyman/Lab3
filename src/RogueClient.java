@@ -11,7 +11,7 @@ public class RogueClient
 
     private static final int CLIENT_PORT = 0;
     private static final String REMOTE_IP = "localhost";
-    private static final int REMOTE_PORT = 4970;
+    private static final int REMOTE_PORT = 69;
     private static final int CONNECTION_TIMEOUT = 10 * 1000;
     private static SocketAddress REMOTE_BIND_PORT_INITIAL = new InetSocketAddress(REMOTE_IP, REMOTE_PORT);
 
@@ -85,13 +85,14 @@ public class RogueClient
          */
 
         // Initial connection on static server port
-        sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
+        //sendReadRequest(socket, REMOTE_BIND_PORT_INITIAL, "kappa.png");
+        sendDataPacket(socket, REMOTE_BIND_PORT_INITIAL, "hola");
         DatagramPacket dataFromServer = receiveNextPacket(socket);
         System.out.println("Server response: " + readPacketContents(dataFromServer));
 
         // Create a new bind port for the established connection (New port number)
-        SocketAddress remoteBindPoint = new InetSocketAddress(dataFromServer.getAddress(), dataFromServer.getPort());
-        sendErrorPacket(socket, remoteBindPoint, ERR_NOT_DEFINED, "Terminate!");
+        //SocketAddress remoteBindPoint = new InetSocketAddress(dataFromServer.getAddress(), dataFromServer.getPort());
+        //sendErrorPacket(socket, remoteBindPoint, ERR_NOT_DEFINED, "Terminate!");
     }
 
     /**

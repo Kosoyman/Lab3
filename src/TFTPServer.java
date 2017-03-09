@@ -14,7 +14,7 @@ import java.util.zip.DataFormatException;
 
 public class TFTPServer
 {
-    private static final int TFTPPORT = 4970;
+    private static final int TFTPPORT = 69;
     private static final int BUFSIZE = 516;
     private static final String READDIR = "TFTP/read/";
     private static final String WRITEDIR = "TFTP/write/";
@@ -105,24 +105,37 @@ public class TFTPServer
                         // Connect to client
                         sendSocket.connect(clientAddress);
 
-                        //check if mode is ok
-                        if (!mode.toString().equals("octet"))
-                        {
-                            System.out.println("Invalid mode of operation. Sending an error packet.");
-                            send_ERR(sendSocket, ERR_NOT_DEFINED, "Invalid mode of operation. The only supported mode is octet.");
-                        }
+
                         // Read request
-                        else if (reqtype == OP_RRQ)
+                        if (reqtype == OP_RRQ)
                         {
-                            requestedFile.insert(0, READDIR);
-                            HandleRQ(sendSocket, requestedFile.toString(), OP_RRQ);
-                            //send_ERR(sendSocket, ERR_DISK_FULL);
+                            //check if mode is ok
+                            if (!mode.toString().equals("octet"))
+                            {
+                                System.out.println("Invalid mode of operation. Sending an error packet.");
+                                send_ERR(sendSocket, ERR_NOT_DEFINED, "Invalid mode of operation. The only supported mode is octet.");
+                            }
+                            else
+                            {
+                                requestedFile.insert(0, READDIR);
+                                HandleRQ(sendSocket, requestedFile.toString(), OP_RRQ);
+                                //send_ERR(sendSocket, ERR_DISK_FULL);
+                            }
                         }
                         // Write request
                         else if (reqtype == OP_WRQ)
                         {
-                            requestedFile.insert(0, WRITEDIR);
-                            HandleRQ(sendSocket,requestedFile.toString(),OP_WRQ);
+                            //check if mode is ok
+                            if (!mode.toString().equals("octet"))
+                            {
+                                System.out.println("Invalid mode of operation. Sending an error packet.");
+                                send_ERR(sendSocket, ERR_NOT_DEFINED, "Invalid mode of operation. The only supported mode is octet.");
+                            }
+                            else
+                            {
+                                requestedFile.insert(0, WRITEDIR);
+                                HandleRQ(sendSocket, requestedFile.toString(), OP_WRQ);
+                            }
                         }
                         // In case of Data or ACK received on a non-established connection
                         else if (reqtype == OP_ACK || reqtype == OP_DAT)
@@ -180,6 +193,7 @@ public class TFTPServer
      *
      * @param buf (received request)
      * @param requestedFile (name of file to read/write)
+     * @param mode (mode of the request)
      * @return opcode (request type: RRQ or WRQ)
      */
     private int ParseRQ(byte[] buf, StringBuffer requestedFile, StringBuffer mode)
@@ -275,7 +289,7 @@ public class TFTPServer
                 if(bytesLeft < 512)
                     packet = new byte[bytesLeft + 4]; //+4 for the header
 
-                //check if the packet is the final one AND it's exactly 512 bytes ling
+                    //check if the packet is the final one AND it's exactly 512 bytes ling
                 else if (bytesLeft == 512){
                     packet = new byte[516];
                     needEmpty = true;
