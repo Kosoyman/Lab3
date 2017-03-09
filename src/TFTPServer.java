@@ -14,7 +14,7 @@ import java.util.zip.DataFormatException;
 
 public class TFTPServer
 {
-    private static final int TFTPPORT = 69;
+    private static final int TFTPPORT = 4970;
     private static final int BUFSIZE = 516;
     private static final String READDIR = "TFTP/read/";
     private static final String WRITEDIR = "TFTP/write/";
